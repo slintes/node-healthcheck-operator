@@ -1,0 +1,8 @@
+apiVersion: v1
+data: {}
+kind: ConfigMap
+metadata:
+  namespace: openshift-operators
+  annotations:
+    service.beta.openshift.io/inject-cabundle: "true"
+  name: ca-bundle

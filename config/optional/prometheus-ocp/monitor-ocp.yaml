@@ -5,17 +5,24 @@ kind: ServiceMonitor
 metadata:
   labels:
     app.kubernetes.io/component: controller-manager
-  name: controller-manager-metrics-monitor
+  name: metrics
   namespace: system
 spec:
   endpoints:
-    - path: /metrics
+    - interval: 5s
       port: https
       scheme: https
-      bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+      bearerTokenSecret:
+        name: prometheus-user-workload-token
+        key: token
       tlsConfig:
-        insecureSkipVerify: true
+        ca:
+          configMap:
+            name: node-healthcheck-ca-bundle
+            key: service-ca.crt
+        serverName: node-healthcheck-auth-proxy.openshift-operators.svc
   selector:
     matchLabels:
       app.kubernetes.io/component: controller-manager
       app.kubernetes.io/name: node-healthcheck-operator
+      app.kubernetes.io/instance: auth-proxy

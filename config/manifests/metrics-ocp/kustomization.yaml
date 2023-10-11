@@ -1,0 +1,10 @@
+resources:
+- ../base
+- ../../optional/prometheus-ocp
+- ../../optional/console-plugin
+
+patches:
+  - path: deployment_patch.yaml
+    target:
+      kind: Deployment
+      name: controller-manager

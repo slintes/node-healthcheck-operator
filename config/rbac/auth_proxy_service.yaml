@@ -3,12 +3,15 @@ kind: Service
 metadata:
   labels:
     app.kubernetes.io/component: controller-manager
-  name: controller-manager-metrics-service
+    app.kubernetes.io/instance: auth-proxy
+  annotations:
+    service.beta.openshift.io/serving-cert-secret-name: node-healthcheck-tls
+  name: auth-proxy
   namespace: system
 spec:
   ports:
-  - name: https
-    port: 8443
-    targetPort: https
+    - name: https
+      port: 8443
+      targetPort: https
   selector:
     app.kubernetes.io/component: controller-manager
