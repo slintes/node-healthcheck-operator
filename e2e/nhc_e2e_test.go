@@ -374,6 +374,50 @@ var _ = Describe("e2e - NHC", Label("NHC"), func() {
 
 		}) // end of worker node context
 
+		Context("Control plane node with unhealthy condition, with classic remediation", func() {
+			BeforeEach(func() {
+				// modify nhc to select control plane nodes
+				nhc.Spec.Selector = metav1.LabelSelector{
+					MatchExpressions: []metav1.LabelSelectorRequirement{
+						{
+							Key:      commonlabels.ControlPlaneRole,
+							Operator: metav1.LabelSelectorOpExists,
+						},
+					},
+				}
+				nodeUnderTest = utils.GetControlPlaneNode(k8sClient)
+			})
+
+			It("Remediates the control plane node", func() {
+				By("making node unhealthy")
+				nodeUnhealthyTime := utils.MakeNodeUnready(k8sClient, clientSet, nodeUnderTest, testNsName, log)
+
+				By("ensuring remediation CR exists")
+				waitTime := nodeUnhealthyTime.Add(unhealthyConditionDuration + 3*time.Second).Sub(time.Now())
+				Eventually(
+					fetchRemediationResourceByName(nodeUnderTest.Name, operatorNsName, remediationGVR), waitTime, "500ms").
+					Should(Succeed())
+
+				By("ensuring status is set")
+				Eventually(func(g Gomega) {
+					nhc = getNodeHealthCheck()
+					g.Expect(nhc.Status.InFlightRemediations).To(HaveLen(1))
+					g.Expect(nhc.Status.UnhealthyNodes).To(HaveLen(1))
+					g.Expect(nhc.Status.UnhealthyNodes[0].Remediations).To(HaveLen(1))
+					g.Expect(nhc.Status.Phase).To(Equal(v1alpha1.PhaseRemediating))
+				}, "10s", "500ms").Should(Succeed())
+
+				By("waiting for healthy node condition")
+				utils.WaitForNodeHealthyCondition(k8sClient, nodeUnderTest, v1.ConditionTrue)
+
+				By("waiting for remediation CR deletion, else cleanup fails")
+				Eventually(func(g Gomega) {
+					g.Expect(k8sClient.Get(context.Background(), ctrl.ObjectKeyFromObject(nhc), nhc)).To(Succeed())
+					g.Expect(nhc.Status.UnhealthyNodes).To(HaveLen(0))
+				}, "5m", "5s").Should(Succeed(), "CR not deleted")
+			})
+		}) // end of control plane node context
+
 	}) // end of remediation context
 })
 
