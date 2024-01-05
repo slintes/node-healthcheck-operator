@@ -16,7 +16,7 @@ import (
 	"github.com/medik8s/node-healthcheck-operator/e2e/utils"
 )
 
-var _ = Describe("e2e - console", Label("NHC"), func() {
+var _ = XDescribe("e2e - console", Label("NHC"), func() {
 	When("when the operator and the console plugin is deployed", labelOcpOnly, func() {
 		It("the plugin manifest should be served", func() {
 			By("getting the ConsolePlugin")

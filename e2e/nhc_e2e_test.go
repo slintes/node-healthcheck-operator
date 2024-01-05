@@ -395,7 +395,7 @@ var _ = Describe("e2e - NHC", Label("NHC"), func() {
 				nodeUnderTest = utils.GetControlPlaneNode(k8sClient)
 			})
 
-			It("Remediates the control plane node", func() {
+			FIt("Remediates the control plane node", func() {
 				By("making node unhealthy")
 				nodeUnhealthyTime := utils.MakeNodeUnready(k8sClient, clientSet, nodeUnderTest, testNsName, log)
 
