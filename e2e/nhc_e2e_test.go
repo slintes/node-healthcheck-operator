@@ -95,8 +95,12 @@ var _ = Describe("e2e - NHC", Label("NHC"), func() {
 	})
 
 	Context("With custom MHC", labelOcpOnly, func() {
+
+		var mhc *v1beta1.MachineHealthCheck
+
 		BeforeEach(func() {
-			mhc := &v1beta1.MachineHealthCheck{
+			By("creating custom MHC")
+			mhc = &v1beta1.MachineHealthCheck{
 				TypeMeta: metav1.TypeMeta{},
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-mhc",
@@ -114,15 +118,18 @@ var _ = Describe("e2e - NHC", Label("NHC"), func() {
 				},
 			}
 			Expect(k8sClient.Create(context.Background(), mhc)).To(Succeed(), "failed to create MHC")
-			DeferCleanup(func() {
-				Expect(k8sClient.Delete(context.Background(), mhc)).To(Succeed(), "failed to delete MHC")
-				By("waiting for NHC to be re-enabled")
-				Eventually(func(g Gomega) {
-					nhc = getNodeHealthCheck()
-					g.Expect(meta.IsStatusConditionTrue(nhc.Status.Conditions, v1alpha1.ConditionTypeDisabled)).To(BeFalse(), "disabled condition should be false")
-					g.Expect(nhc.Status.Phase).To(Equal(v1alpha1.PhaseEnabled), "phase should be Enabled")
-				}, 3*time.Second, 1*time.Second).Should(Succeed(), "NHC should be enabled after MHC deletion")
-			})
+		})
+
+		AfterEach(func() {
+			// don't put this in to deferred cleanup, NHC will be deleted by outer AfterEach first
+			By("deleting custom MHC")
+			Expect(k8sClient.Delete(context.Background(), mhc)).To(Succeed(), "failed to delete MHC")
+			By("waiting for NHC to be re-enabled")
+			Eventually(func(g Gomega) {
+				nhc = getNodeHealthCheck()
+				g.Expect(meta.IsStatusConditionTrue(nhc.Status.Conditions, v1alpha1.ConditionTypeDisabled)).To(BeFalse(), "disabled condition should be false")
+				g.Expect(nhc.Status.Phase).To(Equal(v1alpha1.PhaseEnabled), "phase should be Enabled")
+			}, 3*time.Second, 1*time.Second).Should(Succeed(), "NHC should be enabled after MHC deletion")
 		})
 
 		It("should report disabled NHC", func() {
@@ -394,8 +401,10 @@ var _ = Describe("e2e - NHC", Label("NHC"), func() {
 
 				By("ensuring remediation CR exists")
 				waitTime := nodeUnhealthyTime.Add(unhealthyConditionDuration + 3*time.Second).Sub(time.Now())
+				// for control plane remediation we need to wait longer, because NHC might need to change leader / restart the pod
+				waitTime += 1 * time.Minute
 				Eventually(
-					fetchRemediationResourceByName(nodeUnderTest.Name, operatorNsName, remediationGVR), waitTime, "500ms").
+					fetchRemediationResourceByName(nodeUnderTest.Name, operatorNsName, remediationGVR), waitTime, "1s").
 					Should(Succeed())
 
 				By("ensuring status is set")
