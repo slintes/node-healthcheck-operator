@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	commonlabels "github.com/medik8s/common/pkg/labels"
 	. "github.com/onsi/gomega"
 
 	v1 "k8s.io/api/core/v1"
@@ -61,8 +62,8 @@ func WaitForNodeHealthyCondition(k8sClient ctrl.Client, node *v1.Node, status v1
 func GetWorkerNodes(k8sClient ctrl.Client) []v1.Node {
 	workers := &v1.NodeList{}
 	selector := labels.NewSelector()
-	reqCpRole, _ := labels.NewRequirement("node-role.kubernetes.io/control-plane", selection.DoesNotExist, []string{})
-	reqMRole, _ := labels.NewRequirement("node-role.kubernetes.io/master", selection.DoesNotExist, []string{})
+	reqCpRole, _ := labels.NewRequirement(commonlabels.ControlPlaneRole, selection.DoesNotExist, []string{})
+	reqMRole, _ := labels.NewRequirement(commonlabels.MasterRole, selection.DoesNotExist, []string{})
 	selector = selector.Add(*reqCpRole, *reqMRole)
 	Expect(k8sClient.List(context.Background(), workers, &ctrl.ListOptions{LabelSelector: selector})).ToNot(HaveOccurred())
 	Expect(len(workers.Items)).To(BeNumerically(">=", 3))
@@ -72,7 +73,7 @@ func GetWorkerNodes(k8sClient ctrl.Client) []v1.Node {
 func GetControlPlaneNode(k8sClient ctrl.Client) *v1.Node {
 	cpNodes := &v1.NodeList{}
 	selector := labels.NewSelector()
-	reqCpRole, _ := labels.NewRequirement("node-role.kubernetes.io/control-plane", selection.Exists, []string{})
+	reqCpRole, _ := labels.NewRequirement(commonlabels.ControlPlaneRole, selection.Exists, []string{})
 	selector = selector.Add(*reqCpRole)
 	Expect(k8sClient.List(context.Background(), cpNodes, &ctrl.ListOptions{LabelSelector: selector})).ToNot(HaveOccurred())
 	Expect(len(cpNodes.Items)).To(BeNumerically(">=", 3))
