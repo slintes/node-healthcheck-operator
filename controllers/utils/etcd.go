@@ -6,7 +6,8 @@ import (
 	"github.com/go-logr/logr"
 
 	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/api/policy/v1"
+	policyv1 "k8s.io/api/policy/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -19,7 +20,7 @@ const etcdNamespace = "openshift-etcd"
 // IsEtcdDisruptionAllowed checks if etcd disruption is allowed
 func IsEtcdDisruptionAllowed(ctx context.Context, cl client.Client, log logr.Logger, node *corev1.Node) (bool, error) {
 	log = log.WithName("etcd-pdb-checker")
-	pdbList := &v1.PodDisruptionBudgetList{}
+	pdbList := &policyv1.PodDisruptionBudgetList{}
 	if err := cl.List(ctx, pdbList, &client.ListOptions{Namespace: etcdNamespace}); err != nil {
 		return false, err
 	}
@@ -40,10 +41,15 @@ func IsEtcdDisruptionAllowed(ctx context.Context, cl client.Client, log logr.Log
 	// No disruptions allowed, so the only case we should remediate is that the node in question is already one of the disrupted ones
 	// The PDB doesn't disclose which node is disrupted
 	// So we have to check the etcd guard pods
+	selector, err := metav1.LabelSelectorAsMap(pdb.Spec.Selector)
+	if err != nil {
+		log.Info("Could not parse PDB selector, can't check if etcd quorum will be violated! Refusing remediation!", "selector", pdb.Spec.Selector.String())
+		return false, nil
+	}
 	podList := &corev1.PodList{}
 	if err := cl.List(ctx, podList, &client.ListOptions{
 		Namespace:     etcdNamespace,
-		LabelSelector: labels.SelectorFromSet(pdb.Labels),
+		LabelSelector: labels.SelectorFromSet(selector),
 	}); err != nil {
 		return false, err
 	}
