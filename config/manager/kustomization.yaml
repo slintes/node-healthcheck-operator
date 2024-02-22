@@ -15,7 +15,3 @@ generatorOptions:
 #  - controller_manager_config.yaml
 #  name: manager-config
 
-images:
-- name: controller
-  newName: quay.io/medik8s/node-healthcheck-operator
-  newTag: latest

@@ -30,7 +30,7 @@ export PREVIOUS_VERSION ?= $(DEFAULT_VERSION)
 # Lower bound for the skipRange field in the CSV, should be set to the oldest supported version
 export SKIP_RANGE_LOWER ?= "0.1.0"
 
-CHANNELS = stable
+CHANNELS ?= stable
 export CHANNELS
 DEFAULT_CHANNEL = stable
 export DEFAULT_CHANNEL
@@ -74,6 +74,12 @@ export IMAGE_TAG
 
 # Image URL of the console plugin
 CONSOLE_PLUGIN_IMAGE ?= $(CONSOLE_PLUGIN_IMAGE_BASE):$(CONSOLE_PLUGIN_TAG)
+
+# Image URL of the kube-rbac-proxy
+RBAC_PROXY_IMAGE ?= quay.io/brancz/kube-rbac-proxy:v0.15.0
+
+# Image URL of the must-gather image, used as related image in the downstream CSV
+MUST_GATHER_IMAGE ?= quay.io/medik8s/must-gather:latest
 
 OPERATOR_NAME ?= node-healthcheck-operator
 OPERATOR_NAMESPACE ?= openshift-workload-availability
@@ -296,7 +302,7 @@ endef
 bundle-base: manifests kustomize operator-sdk ## Generate bundle manifests and metadata, then validate generated files.
 	rm -rf ./bundle/manifests
 	$(OPERATOR_SDK) generate --verbose kustomize manifests --input-dir ./config/manifests/base --output-dir ./config/manifests/base
-	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
+	cd config/manifests/base && $(KUSTOMIZE) edit set image controller=$(IMG) && $(KUSTOMIZE) edit set image kube-rbac-proxy=$(RBAC_PROXY_IMAGE)
 	cd config/optional/console-plugin && $(KUSTOMIZE) edit set image console-plugin=${CONSOLE_PLUGIN_IMAGE}
 	$(KUSTOMIZE) build config/manifests/base | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 	cp config/metadata/dependencies.yaml bundle/metadata/
@@ -304,31 +310,16 @@ bundle-base: manifests kustomize operator-sdk ## Generate bundle manifests and m
 
 export CSV="./bundle/manifests/$(OPERATOR_NAME).clusterserviceversion.yaml"
 
-redIcon:=$(shell base64 --wrap=0 ./config/assets/nhc_red.png)
-
 .PHONY: bundle-ocp
 bundle-ocp: yq bundle-base ## Generate bundle manifests and metadata for OCP, then validate generated files.
 	$(KUSTOMIZE) build config/manifests/ocp | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
-	# Replace all the placeholder variables in the CSV
-	sed -r -i "s|BUILD_REGISTRY|${BUILD_REGISTRY}|g;" "${CSV}"
-	sed -r -i "s|CONSOLE_OPERATOR_NAME|${CONSOLE_OPERATOR_NAME}|g;" "${CSV}"
-	sed -r -i "s|OPERATOR_NAME|${OPERATOR_NAME}|g;" "${CSV}"
-	sed -r -i "s|CI_VERSION|${CI_VERSION}|g;" "${CSV}"
-	sed -r -i "s|RBAC_PROXY_OCP_VERSION|${RBAC_PROXY_OCP_VERSION}|g;" "${CSV}"
+	# Replace docs version in the CSV
 	sed -r -i "s|DOCS_RHWA_VERSION|${DOCS_RHWA_VERSION}|g;" "${CSV}"
-	sed -r -i "s|base64EncodedIcon|${redIcon}|g;" "${CSV}"
 	# Add env var with must gather image to the NHC container, so its pullspec gets added to the relatedImages section by OSBS
 	#   https://osbs.readthedocs.io/en/osbs_ocp3/users.html?#pinning-pullspecs-for-related-images
-	$(YQ) -i '( .spec.install.spec.deployments[0].spec.template.spec.containers[] | select(.name == "manager") | .env) += [{"name": "RELATED_IMAGE_MUST_GATHER", "value": "${BUILD_REGISTRY}-${MUST_GATHER_NAME}:v${CI_VERSION}"}]' ${CSV}
-	# update version in metadata.name (we can not replace CSV's name field via kustomize, so we do it here)
-	$(YQ) -i '.metadata.name = "${OPERATOR_NAME}.v${CI_VERSION}"' ${CSV}
-	# using `version: CI_VERSION` in kustomization does not work because version's value must be a semver
-	$(YQ) -i '.spec.version = "${CI_VERSION}"' ${CSV}
+	$(YQ) -i '( .spec.install.spec.deployments[0].spec.template.spec.containers[] | select(.name == "manager") | .env) += [{"name": "RELATED_IMAGE_MUST_GATHER", "value": "${MUST_GATHER_IMAGE}"}]' ${CSV}
 	# add console-plugin annotation
 	$(YQ) -i '.metadata.annotations."console.openshift.io/plugins" = "[\"node-remediation-console-plugin\"]"' ${CSV}
-	$(YQ) -i '.metadata.annotations."olm.skipRange" = ">=${SKIP_RANGE_LOWER} <${CI_VERSION}"' ${CSV}
-	# add replaces field
-	$(YQ) -i '.spec.replaces = "${OPERATOR_NAME}.v${PREVIOUS_VERSION}"' ${CSV}
 	# add OCP annotations
 	$(YQ) -i '.metadata.annotations."operators.openshift.io/valid-subscription" = "[\"OpenShift Kubernetes Engine\", \"OpenShift Container Platform\", \"OpenShift Platform Plus\"]"' ${CSV}
 	# new infrastructure annotations see https://docs.engineering.redhat.com/display/CFC/Best_Practices#Best_Practices-(New)RequiredInfrastructureAnnotations
@@ -339,9 +330,8 @@ bundle-ocp: yq bundle-base ## Generate bundle manifests and metadata for OCP, th
 	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/token-auth-aws" = "false"' ${CSV}
 	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/token-auth-azure" = "false"' ${CSV}
 	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/token-auth-gcp" = "false"' ${CSV}
-	# update Channels for annotations.yaml file - EUS version
-	sed -r -i "s|channels.v1:.*|channels.v1: ${CHANNELS}|;" "${ANNOTATIONS}"
-	$(MAKE) bundle-validate
+	ICON_BASE64="$(shell base64 --wrap=0 ./config/assets/nhc_red.png)" \
+		$(MAKE) bundle-update
 
 .PHONY: bundle-k8s
 bundle-k8s: bundle-base ## Generate bundle manifests and metadata for K8s community, then validate generated files.
@@ -397,7 +387,7 @@ bundle-scorecard: operator-sdk ## Run scorecard tests
 
 .PHONY: bundle-reset
 bundle-reset: ## Revert all version or build date related changes
-	VERSION=0.0.1 $(MAKE) manifests bundle
+	VERSION=0.0.1 $(MAKE) manifests bundle-k8s
 	# empty creation date
 	sed -r -i "s|createdAt: .*|createdAt: \"\"|;" ${CSV}
 	# delete replaces field
