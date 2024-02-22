@@ -4,12 +4,15 @@ SHELL := /bin/bash
 OPERATOR_SDK_VERSION = v1.31.0
 OPM_VERSION = v1.26.3
 CONTROLLER_GEN_VERSION = v0.12.0
-KUSTOMIZE_VERSION = v5.0.0
 # update for major version updates to KUSTOMIZE_VERSION!
 KUSTOMIZE_API_VERSION = v5
+KUSTOMIZE_VERSION = v5.0.0
 ENVTEST_VERSION = v0.0.0-20230519160631-e7b94074ad38 # no tagged versions :/
 GOIMPORTS_VERSION = v0.9.1
 SORT_IMPORTS_VERSION = v0.2.1
+# update for major version updates to YQ_VERSION!
+YQ_API_VERSION = v4
+YQ_VERSION = v4.41.1
 
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.26
@@ -239,6 +242,11 @@ SORT_IMPORTS = $(shell pwd)/bin/sort-imports
 sort-imports: ## Download sort-imports locally if necessary.
 	$(call go-install-tool,$(SORT_IMPORTS),github.com/slintes/sort-imports@$(SORT_IMPORTS_VERSION))
 
+YQ = $(shell pwd)/bin/yq
+.PHONY: yq
+yq: ## Download yq locally if necessary.
+	$(call go-install-tool,$(YQ),github.com/mikefarah/yq/$(YQ_API_VERSION)@$(YQ_VERSION))
+
 .PHONY: operator-sdk
 OPERATOR_SDK = ./bin/operator-sdk
 operator-sdk: ## Download operator-sdk locally if necessary.
@@ -299,7 +307,7 @@ export CSV="./bundle/manifests/$(OPERATOR_NAME).clusterserviceversion.yaml"
 redIcon:=$(shell base64 --wrap=0 ./config/assets/nhc_red.png)
 
 .PHONY: bundle-ocp
-bundle-ocp: bundle-base ## Generate bundle manifests and metadata for OCP, then validate generated files.
+bundle-ocp: yq bundle-base ## Generate bundle manifests and metadata for OCP, then validate generated files.
 	$(KUSTOMIZE) build config/manifests/ocp | $(OPERATOR_SDK) generate --verbose bundle -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 	# Replace all the placeholder variables in the CSV
 	sed -r -i "s|BUILD_REGISTRY|${BUILD_REGISTRY}|g;" "${CSV}"
@@ -311,26 +319,26 @@ bundle-ocp: bundle-base ## Generate bundle manifests and metadata for OCP, then 
 	sed -r -i "s|base64EncodedIcon|${redIcon}|g;" "${CSV}"
 	# Add env var with must gather image to the NHC container, so its pullspec gets added to the relatedImages section by OSBS
 	#   https://osbs.readthedocs.io/en/osbs_ocp3/users.html?#pinning-pullspecs-for-related-images
-	yq -i '( .spec.install.spec.deployments[0].spec.template.spec.containers[] | select(.name == "manager") | .env) += [{"name": "RELATED_IMAGE_MUST_GATHER", "value": "${BUILD_REGISTRY}-${MUST_GATHER_NAME}:v${CI_VERSION}"}]' ${CSV}
+	$(YQ) -i '( .spec.install.spec.deployments[0].spec.template.spec.containers[] | select(.name == "manager") | .env) += [{"name": "RELATED_IMAGE_MUST_GATHER", "value": "${BUILD_REGISTRY}-${MUST_GATHER_NAME}:v${CI_VERSION}"}]' ${CSV}
 	# update version in metadata.name (we can not replace CSV's name field via kustomize, so we do it here)
-	yq -i '.metadata.name = "${OPERATOR_NAME}.v${CI_VERSION}"' ${CSV}
+	$(YQ) -i '.metadata.name = "${OPERATOR_NAME}.v${CI_VERSION}"' ${CSV}
 	# using `version: CI_VERSION` in kustomization does not work because version's value must be a semver
-	yq -i '.spec.version = "${CI_VERSION}"' ${CSV}
+	$(YQ) -i '.spec.version = "${CI_VERSION}"' ${CSV}
 	# add console-plugin annotation
-	yq -i '.metadata.annotations."console.openshift.io/plugins" = "[\"node-remediation-console-plugin\"]"' ${CSV}
-	yq -i '.metadata.annotations."olm.skipRange" = ">=${SKIP_RANGE_LOWER} <${CI_VERSION}"' ${CSV}
+	$(YQ) -i '.metadata.annotations."console.openshift.io/plugins" = "[\"node-remediation-console-plugin\"]"' ${CSV}
+	$(YQ) -i '.metadata.annotations."olm.skipRange" = ">=${SKIP_RANGE_LOWER} <${CI_VERSION}"' ${CSV}
 	# add replaces field
-	yq -i '.spec.replaces = "${OPERATOR_NAME}.v${PREVIOUS_VERSION}"' ${CSV}
+	$(YQ) -i '.spec.replaces = "${OPERATOR_NAME}.v${PREVIOUS_VERSION}"' ${CSV}
 	# add OCP annotations
-	yq -i '.metadata.annotations."operators.openshift.io/valid-subscription" = "[\"OpenShift Kubernetes Engine\", \"OpenShift Container Platform\", \"OpenShift Platform Plus\"]"' ${CSV}
+	$(YQ) -i '.metadata.annotations."operators.openshift.io/valid-subscription" = "[\"OpenShift Kubernetes Engine\", \"OpenShift Container Platform\", \"OpenShift Platform Plus\"]"' ${CSV}
 	# new infastructure annotations see https://docs.engineering.redhat.com/display/CFC/Best_Practices#Best_Practices-(New)RequiredInfrastructureAnnotations
-	yq -i '.metadata.annotations."features.operators.openshift.io/disconnected" = "true"' ${CSV}
-	yq -i '.metadata.annotations."features.operators.openshift.io/fips-compliant" = "false"' ${CSV}
-	yq -i '.metadata.annotations."features.operators.openshift.io/proxy-aware" = "false"' ${CSV}
-	yq -i '.metadata.annotations."features.operators.openshift.io/tls-profiles" = "false"' ${CSV}
-	yq -i '.metadata.annotations."features.operators.openshift.io/token-auth-aws" = "false"' ${CSV}
-	yq -i '.metadata.annotations."features.operators.openshift.io/token-auth-azure" = "false"' ${CSV}
-	yq -i '.metadata.annotations."features.operators.openshift.io/token-auth-gcp" = "false"' ${CSV}
+	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/disconnected" = "true"' ${CSV}
+	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/fips-compliant" = "false"' ${CSV}
+	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/proxy-aware" = "false"' ${CSV}
+	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/tls-profiles" = "false"' ${CSV}
+	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/token-auth-aws" = "false"' ${CSV}
+	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/token-auth-azure" = "false"' ${CSV}
+	$(YQ) -i '.metadata.annotations."features.operators.openshift.io/token-auth-gcp" = "false"' ${CSV}
 	# update Channels for annotations.yaml file - EUS version
 	sed -r -i "s|channels.v1:.*|channels.v1: ${CHANNELS}|;" "${ANNOTATIONS}"
 	$(MAKE) bundle-validate
