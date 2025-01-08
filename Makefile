@@ -70,7 +70,7 @@ CONSOLE_PLUGIN_IMAGE_BASE ?= quay.io/medik8s/node-remediation-console
 # For the default version, use 'latest' image tags.
 # Otherwise version prefixed with 'v'
 ifeq ($(VERSION), $(DEFAULT_VERSION))
-IMAGE_TAG = latest
+IMAGE_TAG ?= latest
 CONSOLE_PLUGIN_TAG ?= latest
 else
 IMAGE_TAG = v$(VERSION)
@@ -426,6 +426,10 @@ bundle-reset: ## Revert all version or build date related changes
 bundle-build-ocp: bundle-ocp bundle-update ## Build the bundle image for OCP.
 	podman build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
 
+.PHONY: bundle-build-okd
+bundle-build-okd: bundle-okd bundle-update ## Build the bundle image for OCP.
+	podman build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
+
 .PHONY: bundle-build-k8s
 bundle-build-k8s: bundle-k8s bundle-update ## Build the bundle image for k8s.
 	podman build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
@@ -482,6 +486,10 @@ deploy-snr:
 container-build-ocp: ## Build containers for OCP
 	make docker-build bundle-build-ocp
 
+.PHONY: container-build-okd
+container-build-okd: ## Build containers for OKD
+	make docker-build bundle-build-okd
+
 .PHONY: container-build-k8s
 container-build-k8s: ## Build containers for K8s
 	make docker-build bundle-build-k8s
@@ -497,3 +505,7 @@ container-push:  ## Push containers (NOTE: catalog can't be build before bundle 
 
 .PHONY: build-and-run
 build-and-run: container-build-ocp container-push bundle-run
+
+.PHONY: container-console-latest
+container-console-latest: ## build and push images tagged with "console" which use "latest" console plugin image
+	OCP_VERSION=4.17 IMAGE_TAG=console SKIP_RANGE_LOWER=0.0.0 make container-build-okd container-push
